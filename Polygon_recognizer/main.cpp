@@ -11,8 +11,19 @@
 # define M_PI 3.14159265358979323846 /* pi */
 
 // START CONFIG
+std::vector<float> allowedDelta = { 50, 40, 40 };//maximum difference in colors for HSV color model (0-360, 0-100, 0-100)
 int minPixelCount = 100; //minimum number of pixels for the shape to be considered valid for analysis (to filter amount too small shapes)
 int lineThickness = 3; //thickness of the lines in the bounding boxes
+
+//coefficients config
+float W3main = 1.963;//main shape
+float M1main = 0.376083;
+float M7main = 0.0353439;
+float W3sub = 0.553983;//sub (smaller) shape
+float M1sub = 0.192024;
+float M7sub = 0.00921829;
+bool printCoefficientsData = true; //if to display the coefficients for each figure
+float coeffDelta = 0.05; //maximum coefficients difference (in %)
 // END CONFIG
 
 //Displays the gicen image with some scaling to fit in the screen
@@ -36,8 +47,8 @@ void ClearImage(cv::Mat_<uchar>& img)
 			img(i, j) = 0;
 }
 
-//draws bounding boxes from a list on a picture ===== NYI =====
-void DrawBoundingBoxes(cv::Mat& I, std::vector<cv::Rect> boundingBoxes)
+//draws bounding boxes from a list on a picture
+void DrawBoundingBoxes(cv::Mat& I, std::vector<cv::Rect> boundingBoxes, bool thick=false)
 {
 	CV_Assert(I.depth() != sizeof(uchar));
 	cv::Mat  res(I.rows, I.cols, CV_8UC1);//8-bitowe, unsigned, 1 sztuka
@@ -56,6 +67,15 @@ void DrawBoundingBoxes(cv::Mat& I, std::vector<cv::Rect> boundingBoxes)
 			{
 				_I(y1, j) = randomColor;
 				_I(y2, j) = randomColor;
+
+				if (thick)
+				{
+					_I(y1 + 1, j) = randomColor;
+					_I(y1 + 2, j) = randomColor;
+
+					_I(y2 - 2, j) = randomColor;
+					_I(y2 - 1, j) = randomColor;
+				}
 			}
 
 			//vertical lines
@@ -65,6 +85,15 @@ void DrawBoundingBoxes(cv::Mat& I, std::vector<cv::Rect> boundingBoxes)
 			{
 				_I(j, x1) = randomColor;
 				_I(j, x2) = randomColor;
+
+				if (thick)
+				{
+					_I(j, x1 + 1) = randomColor;
+					_I(j, x1 + 2) = randomColor;
+
+					_I(j, x2 - 1) = randomColor;
+					_I(j, x2 - 1) = randomColor;
+				}
 			}
 		}
 		I = _I;
@@ -125,7 +154,6 @@ bool CheckColor(cv::Vec3b checkedColor)
 
 	//std::vector<uchar> color = {10, 180, 250};//BGR
 	std::vector<float> color = { 43, 96, 98 };//HSV (0-360, 0-100, 0-100)
-	std::vector<float> allowedDelta = { 50, 40, 40 };//max difference
 
 	//convert given color to HSV
 	cv::Vec3f hsv = ConvertBGRtoHSV(checkedColor);
@@ -233,7 +261,7 @@ int ProbeShape(cv::Mat_<uchar>& searchedImage, cv::Mat_<uchar>& resultImage, boo
 	boundingBox = cv::Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
 
 	if (suma >= minPixelCount)
-		std::cout << "Finished probing a shape, it has: " << suma << " pixels" << std::endl;
+		std::cout << "Found a potential shape, it has: " << suma << " pixels" << std::endl;
 
 	return suma;
 }
@@ -319,11 +347,11 @@ float S_Coeff(cv::Mat& I)
 	CV_Assert(I.depth() != sizeof(uchar));
 	float S = 0;
 	switch (I.channels()) {
-	case 3:
-		cv::Mat_<cv::Vec3b> _I = I;
+	case 1:
+		cv::Mat_<uchar> _I = I;
 		for (int i = 0; i < I.rows; ++i)
 			for (int j = 0; j < I.cols; ++j) {
-				if (_I(i, j)[0] == 0)
+				if (_I(i, j) == 255)
 					S++;
 			}
 		break;
@@ -337,20 +365,21 @@ float L_Coeff(cv::Mat& I)
 	CV_Assert(I.depth() != sizeof(uchar));
 	float L = 0;
 	switch (I.channels()) {
-	case 3:
-		cv::Mat_<cv::Vec3b> _I = I;
+	case 1:
+		cv::Mat_<uchar> _I = I;
 		for (int i = 0; i < I.rows; ++i)
 			for (int j = 0; j < I.cols; ++j) {
-				if (_I(i, j)[0] == 0)//we have a black pixel
+				if (_I(i, j) == 255)//we have a white pixel
 				{
-					if ((i + 1 < I.rows && _I(i + 1, j)[0] != 0) ||
-						(i - 1 >= 0 && _I(i - 1, j)[0] != 0) ||
-						(j + 1 < I.cols && _I(i, j + 1)[0] != 0) ||
-						(j - 1 >= 0 && _I(i, j - 1)[0] != 0) ||
-						(_I(i + 1, j + 1)[0] != 0) ||
-						(_I(i + 1, j - 1)[0] != 0) ||
-						(_I(i - 1, j + 1)[0] != 0) ||
-						(_I(i - 1, j - 1)[0] != 0))
+					//check neighbours
+					if ((i + 1 < I.rows && _I(i + 1, j) != 255) ||
+						(i - 1 >= 0 && _I(i - 1, j) != 255) ||
+						(j + 1 < I.cols && _I(i, j + 1) != 255) ||
+						(j - 1 >= 0 && _I(i, j - 1) != 255) ||
+						(_I(i + 1, j + 1) != 255) ||
+						(_I(i + 1, j - 1) != 255) ||
+						(_I(i - 1, j + 1) != 255) ||
+						(_I(i - 1, j - 1) != 255))
 						L++;
 				}
 			}
@@ -371,11 +400,11 @@ float normalMoment(cv::Mat& I, int p, int q)
 	CV_Assert(I.depth() != sizeof(uchar));
 	float moment = 0;
 	switch (I.channels()) {
-	case 3:
-		cv::Mat_<cv::Vec3b> _I = I;
+	case 1:
+		cv::Mat_<uchar> _I = I;
 		for (int i = 0; i < I.rows; ++i)
 			for (int j = 0; j < I.cols; ++j) {
-				if (_I(i, j)[0] == 0)
+				if (_I(i, j) == 255)
 					moment += pow(i, p) * pow(j, q);
 			}
 		break;
@@ -464,9 +493,9 @@ int main()
 		{
 			boundingBoxes.push_back(separatedShapes[j].boundingBox);
 			//DisplayImage(separatedShapes[j].shape, "Image " + std::to_string(i) + "   Step: 2 Shape: " + std::to_string(j+1));
-			std::cout << "Shape " << std::to_string(j + 1) << " bounding box:" << 
-				" x: " << std::to_string(separatedShapes[j].boundingBox.x) << " y: " << std::to_string(separatedShapes[j].boundingBox.y) << 
-				" width: " << std::to_string(separatedShapes[j].boundingBox.width) << " height: " << std::to_string(separatedShapes[j].boundingBox.height) << std::endl;
+			//std::cout << "Shape " << std::to_string(j + 1) << " bounding box:" << 
+			//	" x: " << std::to_string(separatedShapes[j].boundingBox.x) << " y: " << std::to_string(separatedShapes[j].boundingBox.y) << 
+			//	" width: " << std::to_string(separatedShapes[j].boundingBox.width) << " height: " << std::to_string(separatedShapes[j].boundingBox.height) << std::endl;
 		}
 		cv::Mat step2 = img.clone();
 		DrawBoundingBoxes(step2, boundingBoxes);
@@ -475,10 +504,41 @@ int main()
 
 		
 		//Processing - Check for coefficients
-		//TODO
+		std::vector<cv::Rect> foundLogos;
+		for (int j = 0; j < separatedShapes.size(); j++)
+		{
+			//calculate coefficients
+			float S = S_Coeff(separatedShapes[j].shape);
+			float L = L_Coeff(separatedShapes[j].shape);
+			float W3 = W3_Coeff(S, L);
+			float M1 = M1_Coeff(separatedShapes[j].shape);
+			float M7 = M7_Coeff(separatedShapes[j].shape);
+
+			//print coefficients if requested
+			if (printCoefficientsData)
+			{
+				std::cout << "Shape 1" << std::endl;
+				std::cout << "Pole (S): " << S << std::endl;
+				std::cout << "Obwód (L): " << L << std::endl;
+				std::cout << "W3: " << W3 << std::endl;
+				std::cout << "M1: " << M1 << std::endl;
+				std::cout << "M7: " << M7 << std::endl;
+			}
+
+			//compare coefficients
+			if (abs(W3main - W3) / W3main <= coeffDelta &&
+				abs(M1main - M1) / M1main <= coeffDelta &&
+				abs(M7main - M7) / M7main <= coeffDelta)
+			{
+				foundLogos.push_back(separatedShapes[j].boundingBox);
+			}
+		}
 
 		//mark the found shapes on the original image using bounding boxes (and print the results to Console)
-		//TODO
+		cv::Mat step3 = img.clone();
+		DrawBoundingBoxes(step3, foundLogos, true);
+		cv::imwrite(outputPath + " - step final.png", step3);
+		DisplayImage(step3, "Image " + std::to_string(i) + "   Step: Final");
 		
 
 		//wait for input and close all windows to close
