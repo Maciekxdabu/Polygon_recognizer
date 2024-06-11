@@ -6,11 +6,13 @@
 #include <filesystem>
 #include <stack>
 #include <cmath>
+#include <ctime>
 
 # define M_PI 3.14159265358979323846 /* pi */
 
 // START CONFIG
 int minPixelCount = 100; //minimum number of pixels for the shape to be considered valid for analysis (to filter amount too small shapes)
+int lineThickness = 3; //thickness of the lines in the bounding boxes
 // END CONFIG
 
 //Displays the gicen image with some scaling to fit in the screen
@@ -26,12 +28,48 @@ void DisplayImage(cv::Mat& I, std::string windowName)
 	cv::imshow(windowName, I);
 }
 
-//method for clearing binary images (sets all pixels to '0')
+//method for clearing <uchar> images (sets all pixels to '0')
 void ClearImage(cv::Mat_<uchar>& img)
 {
 	for (int i = 0; i < img.rows; ++i)
 		for (int j = 0; j < img.cols; ++j)
 			img(i, j) = 0;
+}
+
+//draws bounding boxes from a list on a picture ===== NYI =====
+void DrawBoundingBoxes(cv::Mat& I, std::vector<cv::Rect> boundingBoxes)
+{
+	CV_Assert(I.depth() != sizeof(uchar));
+	cv::Mat  res(I.rows, I.cols, CV_8UC1);//8-bitowe, unsigned, 1 sztuka
+	switch (I.channels()) {
+	case 3:
+		cv::Mat_<cv::Vec3b> _I = I;
+		cv::Vec3b randomColor(std::rand() % 256, std::rand() % 256, std::rand() % 256);
+		//cv::Vec3b randomColor(120, 120, 120);
+
+		for (int i = 0; i < boundingBoxes.size(); i++)
+		{
+			//horizontal lines
+			int y1 = boundingBoxes[i].y;
+			int y2 = boundingBoxes[i].y + boundingBoxes[i].height;
+			for (int j = boundingBoxes[i].x; j < boundingBoxes[i].x + boundingBoxes[i].width; j++)
+			{
+				_I(y1, j) = randomColor;
+				_I(y2, j) = randomColor;
+			}
+
+			//vertical lines
+			int x1 = boundingBoxes[i].x;
+			int x2 = boundingBoxes[i].x + boundingBoxes[i].width;
+			for (int j = boundingBoxes[i].y; j < boundingBoxes[i].y + boundingBoxes[i].height; j++)
+			{
+				_I(j, x1) = randomColor;
+				_I(j, x2) = randomColor;
+			}
+		}
+		I = _I;
+		break;
+	}
 }
 
 #pragma region Filtering_methods
@@ -145,50 +183,6 @@ struct PixelCoord
 //recursive method for probing the pixels of the shape (returns the number of pixels in the givenShape)
 int ProbeShape(cv::Mat_<uchar>& searchedImage, cv::Mat_<uchar>& resultImage, bool** checkedPixels, cv::Rect& boundingBox, int x, int y)
 {
-	/*//mark pixel as checked
-	checkedPixels[x][y] = true;
-	int suma = 0;
-
-	//check if pixel is white
-	if ((*searchedImage)(x, y) == 255)
-	{
-		//add it to the result
-		(*resultImage)(x, y) = 255;
-		suma++;
-
-		//update bounding box if needed
-		if (x < (*boundingBox).x)//left
-		{
-			(*boundingBox).x--;
-			(*boundingBox).width++;
-		}
-		else if ((*boundingBox).x + (*boundingBox).width < x)//right
-			(*boundingBox).width++;
-		if (y < (*boundingBox).y)//up
-		{
-			(*boundingBox).y--;
-			(*boundingBox).height++;
-		}
-		else if ((*boundingBox).y + (*boundingBox).height < y)//down
-			(*boundingBox).height++;
-	}
-
-	//check the other directions if not yet checked
-
-	if (x > 0 && checkedPixels[x - 1][y] == false)//left
-		suma += ProbeShape(searchedImage, resultImage, checkedPixels, boundingBox, x - 1, y);
-
-	if (y > 0 && checkedPixels[x][y - 1] == false)//up
-		suma += ProbeShape(searchedImage, resultImage, checkedPixels, boundingBox, x, y - 1);
-
-	if (x < (*searchedImage).size[0] - 1 && checkedPixels[x + 1][y] == false)//right
-		suma += ProbeShape(searchedImage, resultImage, checkedPixels, boundingBox, x + 1, y);
-
-	if (y < (*searchedImage).size[1] - 1 && checkedPixels[x][y + 1] == false)//down
-		suma += ProbeShape(searchedImage, resultImage, checkedPixels, boundingBox, x, y + 1);
-
-	return suma;*/
-
 	int suma = 0;
 
 	// Directions for moving up, down, left, and right
@@ -270,7 +264,7 @@ std::vector<ShapeImage> SeparateShapes(cv::Mat& I)
 	switch (I.channels()) {
 	case 1:
 		cv::Mat_<uchar> _I = I;
-			
+
 		bool** checkedPixels = new bool* [_I.size[0]];
 		for (int i = 0; i < _I.size[0]; i++)
 		{
@@ -290,9 +284,8 @@ std::vector<ShapeImage> SeparateShapes(cv::Mat& I)
 				{
 					//initialize values
 					cv::Rect boundingBox;
-					cv::Mat_<uchar> resultShape = res.clone();//grayscale
-					ClearImage(resultShape);
-					//TODO ----- clear empty image
+					cv::Mat_<uchar> resultShape = res.clone();//copy image data
+					ClearImage(resultShape);//clear copied image (all black)
 
 					//do shape search
 					int shapeSize = ProbeShape(_I, resultShape, checkedPixels, boundingBox, j, i);
@@ -309,36 +302,14 @@ std::vector<ShapeImage> SeparateShapes(cv::Mat& I)
 				}
 			}
 		//when through all the pixels, and by that through all the shapes
-		
+
 		break;
 	}
 
 	return results;
 }
 
-//returns a new image with drawn bounding boxes from a list ===== NYI =====
-cv::Mat DrawBoundingBoxes(cv::Mat& I, std::vector<cv::Rect> boundingBoxes)
-{
-	CV_Assert(I.depth() != sizeof(uchar));
-	cv::Mat  res(I.rows, I.cols, CV_8UC1);//8-bitowe, unsigned, 1 sztuka
-	switch (I.channels()) {
-	case 1:
-		cv::Mat_<cv::Vec3b> _I = I;
-		cv::Mat_<uchar> result = res;//grayscale
-		for (int i = 0; i < I.rows; ++i)
-			for (int j = 0; j < I.cols; ++j)
-			{
-				
-			}
-		res = result;
-		break;
-	}
-
-	return res;
-}
-
 #pragma endregion
-
 
 #pragma region Coefficients_methods
 
@@ -451,6 +422,8 @@ float M7_Coeff(cv::Mat& I)
 // ======================= MAIN =======================
 int main()
 {
+	std::srand(std::time(0));
+
 	std::string inputFolderName = "zdjecia";
 	std::string outputFolderName = "output";
 
@@ -486,18 +459,25 @@ int main()
 		//Processing - separating shapes
 		std::vector<ShapeImage> separatedShapes = SeparateShapes(step1);
 		std::cout << "Amount of individual shapes found: " << separatedShapes.size() << std::endl;
+		std::vector<cv::Rect> boundingBoxes;
 		for (int j=0; j<separatedShapes.size(); j++)
 		{
-			DisplayImage(separatedShapes[j].shape, "Image " + std::to_string(i) + "   Step: 2 Shape: " + std::to_string(j+1));
+			boundingBoxes.push_back(separatedShapes[j].boundingBox);
+			//DisplayImage(separatedShapes[j].shape, "Image " + std::to_string(i) + "   Step: 2 Shape: " + std::to_string(j+1));
 			std::cout << "Shape " << std::to_string(j + 1) << " bounding box:" << 
 				" x: " << std::to_string(separatedShapes[j].boundingBox.x) << " y: " << std::to_string(separatedShapes[j].boundingBox.y) << 
 				" width: " << std::to_string(separatedShapes[j].boundingBox.width) << " height: " << std::to_string(separatedShapes[j].boundingBox.height) << std::endl;
 		}
+		cv::Mat step2 = img.clone();
+		DrawBoundingBoxes(step2, boundingBoxes);
+		cv::imwrite(outputPath + " - step 2.png", step2);
+		DisplayImage(step2, "Image " + std::to_string(i) + "   Step: 2");
+
 		
 		//Processing - Check for coefficients
 		//TODO
 
-		//mark the found shapes on the original image
+		//mark the found shapes on the original image using bounding boxes (and print the results to Console)
 		//TODO
 		
 
